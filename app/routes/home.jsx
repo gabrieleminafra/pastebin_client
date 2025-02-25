@@ -336,7 +336,7 @@ export default function Home() {
                       {archive.title.slice(0, 45)}
                     </span>
                     <span className="inline lg:hidden font-semibold">
-                      {archive.title.slice(0, 23)}
+                      {archive.title.slice(0, 18)}
                     </span>
                     <br />
                     <span>
