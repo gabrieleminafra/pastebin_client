@@ -2,7 +2,14 @@ import io from "socket.io-client";
 import client from "axios";
 import toast, { Toaster } from "react-hot-toast";
 import { Fragment, useEffect, useRef, useState } from "react";
-import { ArchiveIcon, PlusIcon } from "lucide-react";
+import {
+  ArchiveIcon,
+  CloudUpload,
+  Delete,
+  Download,
+  PlusIcon,
+  Save,
+} from "lucide-react";
 
 export function meta() {
   return [{ title: "Pastebin" }];
@@ -19,7 +26,11 @@ export default function Home() {
 
   const [selectedPaste, setSelectedPaste] = useState(INITIAL_PASTE_DATA);
   const [pasteItems, setPasteItems] = useState([]);
+  const [archiveItems, setArchiveItems] = useState([]);
+
   const [isFocused, setIsFocused] = useState(true);
+  const [file, setFile] = useState(null);
+  const [isUploading, setIsUploading] = useState(false);
 
   const handlePastePublish = async (body) => {
     try {
@@ -46,11 +57,60 @@ export default function Home() {
 
   const handleInitialLoad = async (body) => {
     try {
+      Promise.all([
+        await client
+          .get(import.meta.env.VITE_API_ENDPOINT + "/clipboard/all")
+          .then(({ data }) => setPasteItems(data)),
+        await client
+          .get(import.meta.env.VITE_API_ENDPOINT + "/archive/all")
+          .then(({ data }) => setArchiveItems(data)),
+        ,
+      ]);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const handleArchiveUplaod = async (data) => {
+    setIsUploading(true);
+    const payload = new FormData();
+    payload.append("file", data);
+    try {
+      await client.post(
+        `${import.meta.env.VITE_API_ENDPOINT}/archive/publish`,
+        payload
+      );
+    } catch (error) {
+      console.error(error);
+    }
+    setIsUploading(false);
+  };
+
+  const handleArchiveDownload = async (path) => {
+    try {
       const { data } = await client.get(
-        import.meta.env.VITE_API_ENDPOINT + "/clipboard/all"
+        `${import.meta.env.VITE_API_ENDPOINT}/archive/get`,
+        { params: { path: encodeURIComponent(path) }, responseType: "blob" }
       );
 
-      setPasteItems(data);
+      const url = window.URL.createObjectURL(new Blob([data]));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = path.split("/").pop();
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const handleArchiveDelete = async (id) => {
+    try {
+      await client.delete(
+        `${import.meta.env.VITE_API_ENDPOINT}/archive/${id}/delete`
+      );
     } catch (error) {
       console.error(error);
     }
@@ -63,8 +123,20 @@ export default function Home() {
         transports: ["websocket"],
       });
 
+      socketRef.current.on("disconnect", () => {
+        toast.error("Connessione al live server persa");
+      });
+
       socketRef.current.on("new_paste", (payload) => {
         setPasteItems((state) => [...state, payload]);
+      });
+
+      socketRef.current.on("new_archive", (payload) => {
+        setArchiveItems((state) => [...state, payload]);
+      });
+
+      socketRef.current.on("delete_archive", (payload) => {
+        setArchiveItems((state) => state.filter((item) => item.id !== payload));
       });
 
       socketRef.current.on("delete_paste", (payload) => {
@@ -88,6 +160,10 @@ export default function Home() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (file) handleArchiveUplaod(file);
+  }, [file]);
 
   useEffect(() => {
     const workingItem = pasteItems.find((item) => item.id == selectedPaste.id);
@@ -115,6 +191,10 @@ export default function Home() {
     });
   };
 
+  const handleFileChange = (event) => {
+    setFile(event.target.files[0]);
+  };
+
   const handleFocus = () => {
     setIsFocused(true);
   };
@@ -127,9 +207,11 @@ export default function Home() {
   return (
     <Fragment>
       <Toaster />
-      <div className="flex flex-col md:flex-row h-screen bg-gray-100 p-4 py-12 gap-4">
-        <div className="w-full md:w-2/8 bg-white p-6 rounded-2xl shadow-xl flex flex-col gap-4">
-          <h2 className="text-xl font-semibold text-gray-800">Tutti i paste</h2>
+      <div className="flex flex-col xl:flex-row h-screen bg-gray-100 p-4 py-12 gap-4">
+        <div className="w-full xl:w-2/12 bg-white p-6 rounded-2xl shadow-xl flex flex-col gap-4">
+          <h2 className="text-xl font-semibold text-gray-800">
+            Tutti gli appunti
+          </h2>
           <ul className="space-y-3 overflow-y-auto">
             {pasteItems.map((item) => (
               <li
@@ -146,19 +228,19 @@ export default function Home() {
               onClick={() => setSelectedPaste(INITIAL_PASTE_DATA)}
               className="p-3 bg-sky-600 hover:bg-sky-800 rounded-lg text-white font-semibold cursor-pointer transition flex justify-between"
             >
-              Crea nuovo paste <PlusIcon />
+              Crea nuovo blocco appunti <PlusIcon />
             </li>
           </ul>
         </div>
 
-        <div className="w-full w-4/8 md:w-5/8 flex flex-col items-center justify-center md:mx-4">
+        <div className="w-full xl:w-6/12 flex flex-col items-center justify-center xl:mx-4">
           <div className="w-full bg-white p-6 rounded-xl shadow-xl flex flex-col gap-4 flex-1">
             <h2 className="text-xl font-semibold text-gray-800">
               {selectedPaste.created_at
                 ? `Paste del ${new Date(
                     selectedPaste.created_at
                   ).toLocaleString("it-IT")}`
-                : "Nuovo paste"}
+                : "Nuovo blocco appunti"}
             </h2>
             <input
               type="text"
@@ -172,7 +254,7 @@ export default function Home() {
               onFocus={handleFocus}
               onBlur={handleBlur}
               className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
-              placeholder="Inserisci testo..."
+              placeholder="Inserisci un titolo"
             />
             <textarea
               value={selectedPaste.content}
@@ -196,44 +278,78 @@ export default function Home() {
                   handlePastePublish({
                     title: selectedPaste.title,
                     content: selectedPaste.content,
-                    client_id: socketRef.current.id,
                   })
                 }
               >
-                Salva paste
-                <PlusIcon className="ml-3" />
+                Salva appunti
+                <Save className="ml-3" />
               </button>
             ) : (
               <button
                 className="p-3 bg-red-400 text-white rounded-lg font-semibold cursor-pointer transition flex justify-center"
                 onClick={() => handlePasteDelete(selectedPaste.id)}
               >
-                Archivia questo paste
+                Archivia questi appunti
                 <ArchiveIcon className="ml-3" />
               </button>
             )}
           </div>
         </div>
 
-        <div className="w-full lg:w-2/8 bg-white p-6 rounded-2xl shadow-xl flex flex-col gap-4">
-          <h2 className="text-xl font-semibold text-gray-800">Allegati</h2>
-          <ul className="space-y-3 overflow-y-auto">
-            {/* {pasteItems.map((item) => (
+        <div className="w-full xl:w-4/12 bg-white p-6 rounded-2xl shadow-xl flex flex-col gap-4">
+          <h2 className="text-xl font-semibold text-gray-800">Documenti</h2>
+
+          <ul className=" overflow-y-auto">
+            {archiveItems.map((archive) => (
               <li
-                key={item.id}
-                onClick={() => setSelectedPaste(item)}
-                className={`p-3 hover:bg-gray-400 rounded-lg text-gray-700 font-semibold cursor-pointer transition ${
-                  selectedPaste.id === item.id ? "bg-sky-300" : "bg-gray-200"
-                }`}
+                className="w-full bg-white p-2 rounded-xl flex gap-4"
+                key={archive.id}
               >
-                {item.title}
+                {/* File Input */}
+                <label className="w-full p-6 flex justify-between items-center border-2 border-gray-300 rounded-lg">
+                  <span className="text-gray-600">
+                    {archive.title.slice(0, 30)}
+                  </span>
+                  <span className="flex gap-4">
+                    <Download
+                      onClick={() => handleArchiveDownload(archive.path)}
+                      className="w-7 h-7 text-blue-600 hover:text-blue-700 transition cursor-pointer mb-2"
+                    />
+
+                    <Delete
+                      onClick={() => handleArchiveDelete(archive.id)}
+                      className="w-7 h-7 text-red-600 hover:text-red-700 transition cursor-pointer mb-2"
+                      size={8}
+                    />
+                  </span>
+                </label>
               </li>
-            ))} */}
-            <li
-              // onClick={() => setSelectedPaste(INITIAL_PASTE_DATA)}
-              className="p-3 aspect-square bg-sky-600 hover:bg-sky-800 rounded-lg text-white font-semibold cursor-pointer transition grid place-content-center"
-            >
-              <PlusIcon size={40} />
+            ))}
+
+            <li className="w-full bg-white p-2 rounded-xl flex flex-col gap-4">
+              {/* File Input */}
+              <label className="w-full flex flex-col items-center justify-center p-6 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-blue-400 transition">
+                <span className="text-gray-600">
+                  {isUploading ? (
+                    <div className="flex align-middle justify-between gap-3">
+                      <div className="flex items-center justify-center">
+                        <div className="w-8 h-8 border-4 border-blue-300 border-t-blue-900 rounded-full animate-spin"></div>
+                      </div>
+                      Carico {file.name.slice(0, 30)}...
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-center gap-3">
+                      Clicca per caricare un allegato
+                      <CloudUpload className="w-7 h-7 mt-2 text-blue-500 mb-2" />
+                    </div>
+                  )}
+                </span>
+                <input
+                  type="file"
+                  className="hidden"
+                  onChange={handleFileChange}
+                />
+              </label>
             </li>
           </ul>
         </div>
