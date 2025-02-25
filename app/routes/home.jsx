@@ -27,6 +27,7 @@ export default function Home() {
   const [selectedPaste, setSelectedPaste] = useState(INITIAL_PASTE_DATA);
   const [pasteItems, setPasteItems] = useState([]);
   const [archiveItems, setArchiveItems] = useState([]);
+  const [pendingChanges, setPendingChanges] = useState(0);
 
   const [isFocused, setIsFocused] = useState(true);
   const [file, setFile] = useState(null);
@@ -84,6 +85,7 @@ export default function Home() {
       console.error(error);
     }
     setIsUploading(false);
+    setFile(null);
   };
 
   const handleArchiveDownload = async (path) => {
@@ -118,6 +120,7 @@ export default function Home() {
 
   useEffect(() => {
     handleInitialLoad();
+
     if (!socketRef.current) {
       socketRef.current = io(import.meta.env.VITE_API_ENDPOINT, {
         transports: ["websocket"],
@@ -166,10 +169,20 @@ export default function Home() {
   }, [file]);
 
   useEffect(() => {
+    if (pendingChanges < 10) {
+      setPendingChanges(pendingChanges + 1);
+      return;
+    }
+
+    emitUpdateEvent();
+    setPendingChanges(0);
+  }, [selectedPaste]);
+
+  useEffect(() => {
+    if (!pasteItems || !selectedPaste.id) return;
     const workingItem = pasteItems.find((item) => item.id == selectedPaste.id);
 
     if (workingItem && isFocused) {
-      toast.success("Sono state ignorate delle modifiche in ingresso");
       return;
     }
 
@@ -178,7 +191,7 @@ export default function Home() {
       return;
     }
 
-    if (pasteItems) setSelectedPaste(workingItem ?? selectedPaste);
+    setSelectedPaste(workingItem ?? selectedPaste);
   }, [pasteItems]);
 
   const emitUpdateEvent = () => {
@@ -201,7 +214,7 @@ export default function Home() {
 
   const handleBlur = () => {
     setIsFocused(false);
-    emitUpdateEvent();
+    setPendingChanges(0);
   };
 
   return (
@@ -221,14 +234,14 @@ export default function Home() {
                   selectedPaste.id === item.id ? "bg-sky-300" : "bg-gray-200"
                 }`}
               >
-                {item.title}
+                {item.title.slice(0, 30)}
               </li>
             ))}
             <li
               onClick={() => setSelectedPaste(INITIAL_PASTE_DATA)}
               className="p-3 bg-sky-600 hover:bg-sky-800 rounded-lg text-white font-semibold cursor-pointer transition flex justify-between"
             >
-              Crea nuovo blocco appunti <PlusIcon />
+              Crea nuovo blocco <PlusIcon />
             </li>
           </ul>
         </div>
@@ -308,7 +321,7 @@ export default function Home() {
                 {/* File Input */}
                 <label className="w-full p-6 flex justify-between items-center border-2 border-gray-300 rounded-lg">
                   <span className="text-gray-600">
-                    {archive.title.slice(0, 30)}
+                    {archive.title.slice(0, 35)}
                   </span>
                   <span className="flex gap-4">
                     <Download
@@ -335,7 +348,7 @@ export default function Home() {
                       <div className="flex items-center justify-center">
                         <div className="w-8 h-8 border-4 border-blue-300 border-t-blue-900 rounded-full animate-spin"></div>
                       </div>
-                      Carico {file.name.slice(0, 30)}...
+                      Carico {file.name.slice(0, 35)}...
                     </div>
                   ) : (
                     <div className="flex items-center justify-center gap-3">
