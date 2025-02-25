@@ -1,0 +1,44 @@
+node_modules/
+dist/
+build/
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Editor logs and system files
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Logs and debugging
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Dependency directories
+/.pnp
+.pnp.js
+
+# Jest test coverage
+/coverage
+
+# Next.js build output (if applicable)
+.next/
+out/
+
+# Storybook build files
+.storybook-out/
+
+# Misc
+/.cache
+/.parcel-cache
