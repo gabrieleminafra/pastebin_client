@@ -32,6 +32,7 @@ export default function Home() {
   const [isFocused, setIsFocused] = useState(true);
   const [file, setFile] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   const handlePastePublish = async (body) => {
     try {
@@ -57,6 +58,7 @@ export default function Home() {
   };
 
   const handleInitialLoad = async (body) => {
+    setIsLoading(true);
     try {
       Promise.all([
         await client
@@ -70,6 +72,7 @@ export default function Home() {
     } catch (error) {
       console.error(error);
     }
+    setIsLoading(false);
   };
 
   const handleArchiveUplaod = async (data) => {
@@ -119,11 +122,15 @@ export default function Home() {
   };
 
   useEffect(() => {
-    handleInitialLoad();
+    // handleInitialLoad();
 
     if (!socketRef.current) {
       socketRef.current = io(import.meta.env.VITE_API_ENDPOINT, {
         transports: ["websocket"],
+      });
+
+      socketRef.current.on("connect", () => {
+        handleInitialLoad();
       });
 
       socketRef.current.on("disconnect", () => {
@@ -215,12 +222,19 @@ export default function Home() {
   const handleBlur = () => {
     setIsFocused(false);
     setPendingChanges(0);
+    emitUpdateEvent();
   };
 
   return (
     <Fragment>
       <Toaster />
-      <div className="flex flex-col xl:flex-row h-screen bg-gray-100 p-4 py-12 gap-4">
+      <div
+        className={`flex flex-col xl:flex-row h-screen bg-gray-100 p-4 py-12 gap-4 transition-opacity ${
+          isLoading
+            ? "opacity-40 pointer-events-none"
+            : "opacity-100 pointer-events-auto"
+        }`}
+      >
         <div className="w-full xl:w-2/12 bg-white p-6 rounded-2xl shadow-xl flex flex-col gap-4">
           <h2 className="text-xl font-semibold text-gray-800">
             Tutti gli appunti
@@ -314,14 +328,20 @@ export default function Home() {
 
           <ul className=" overflow-y-auto">
             {archiveItems.map((archive) => (
-              <li
-                className="w-full bg-white p-2 rounded-xl flex gap-4"
-                key={archive.id}
-              >
+              <li className="w-full bg-white p-2 rounded-xl" key={archive.id}>
                 {/* File Input */}
-                <label className="w-full p-6 flex justify-between items-center border-2 border-gray-300 rounded-lg">
-                  <span className="text-gray-600">
-                    {archive.title.slice(0, 35)}
+                <label className="w-full p-6 gap-4 flex justify-between items-center border-2 border-gray-300 rounded-lg">
+                  <span className="text-gray-600 whitespace-nowrap">
+                    <span className="hidden lg:inline font-semibold">
+                      {archive.title.slice(0, 45)}
+                    </span>
+                    <span className="inline lg:hidden font-semibold">
+                      {archive.title.slice(0, 23)}
+                    </span>
+                    <br />
+                    <span>
+                      {new Date(archive.created_at).toLocaleString("it-IT")}
+                    </span>
                   </span>
                   <span className="flex gap-4">
                     <Download

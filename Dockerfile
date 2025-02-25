@@ -8,6 +8,8 @@ RUN npm install
 
 COPY . .
 
+ENV VITE_API_ENDPOINT=https://api.gabrieleminafra.me
+
 RUN npm run build
 
 EXPOSE 3000
