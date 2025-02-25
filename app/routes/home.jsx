@@ -85,7 +85,7 @@ export default function Home() {
         payload
       );
     } catch (error) {
-      console.error(error);
+      toast.error("Caricamento non riuscito.  Controlla la dimensione del file.")
     }
     setIsUploading(false);
     setFile(null);
@@ -134,7 +134,7 @@ export default function Home() {
       });
 
       socketRef.current.on("disconnect", () => {
-        toast.error("Connessione al live server persa");
+        setIsLoading(true)
       });
 
       socketRef.current.on("new_paste", (payload) => {
