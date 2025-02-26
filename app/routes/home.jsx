@@ -5,13 +5,13 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import {
   ArchiveIcon,
   CloudUpload,
-  Delete,
   Download,
-  FileQuestionIcon,
   PlusIcon,
   Save,
   Trash,
 } from "lucide-react";
+import empty_1 from "../assets/empty_1.png";
+import empty_2 from "../assets/empty_2.png";
 
 export function meta() {
   return [{ title: "Pastebin" }];
@@ -253,7 +253,7 @@ export default function Home() {
               <div className="h-full grid place-content-center">
                 <img
                   className="aspect-square h-56 grayscale opacity-70"
-                  src="app/assets/empty_1.png"
+                  src={empty_1}
                 />
               </div>
             )}
@@ -355,7 +355,7 @@ export default function Home() {
                 <div className="h-full grid place-content-center">
                   <img
                     className="aspect-square h-56 grayscale opacity-70"
-                    src="app/assets/empty_2.png"
+                    src={empty_2}
                   />
                 </div>
               )}
