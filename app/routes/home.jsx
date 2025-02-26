@@ -9,6 +9,7 @@ import {
   PlusIcon,
   Save,
   Trash,
+  X,
 } from "lucide-react";
 import empty_1 from "../assets/empty_1.png";
 import empty_2 from "../assets/empty_2.png";
@@ -21,6 +22,50 @@ const INITIAL_PASTE_DATA = {
   id: null,
   title: "",
   content: "",
+};
+
+const UploadedFile = ({
+  archive,
+  handleArchiveDownload,
+  handleArchiveDelete,
+}) => {
+  const [isDownloading, setIsDownloading] = useState(false);
+  return (
+    <li className="w-full bg-white rounded-xl" key={archive.id}>
+      {/* File Input */}
+      <label className="w-full p-6 gap-4 flex justify-between items-center border-2 border-gray-300 rounded-lg">
+        <div className="text-gray-600 whitespace-nowrap w-10/12 overflow-hidden">
+          <span className="font-semibold">{archive.title}</span>
+          <br />
+          <span>{new Date(archive.created_at).toLocaleString("it-IT")}</span>
+        </div>
+        <div className="flex items-baseline gap-4">
+          {!isDownloading ? (
+            <Download
+              onClick={() =>
+                handleArchiveDownload(
+                  archive.id,
+                  archive.title,
+                  setIsDownloading
+                )
+              }
+              className="w-7 h-7 text-blue-600 hover:text-blue-700 transition cursor-pointer mb-2"
+            />
+          ) : (
+            <div className="flex items-center justify-center">
+              <div className="w-7 h-7 border-4 border-blue-300 border-t-blue-900 rounded-full animate-spin"></div>
+            </div>
+          )}
+
+          <Trash
+            onClick={() => handleArchiveDelete(archive.id)}
+            className="w-7 h-7 text-red-600 hover:text-red-700 transition cursor-pointer mb-2"
+            size={8}
+          />
+        </div>
+      </label>
+    </li>
+  );
 };
 
 export default function Home() {
@@ -87,15 +132,15 @@ export default function Home() {
         payload
       );
     } catch (error) {
-      toast.error(
-        "Caricamento non riuscito.  Controlla la dimensione del file."
-      );
+      toast.error("Caricamento non riuscito. Il file non deve superare 1GB");
     }
     setIsUploading(false);
     setFile(null);
   };
 
-  const handleArchiveDownload = async (id, fileName) => {
+  const handleArchiveDownload = async (id, fileName, onDownloadEvent) => {
+    onDownloadEvent(true);
+
     try {
       const { data } = await client.get(
         `${import.meta.env.VITE_API_ENDPOINT}/archive/get`,
@@ -111,8 +156,10 @@ export default function Home() {
       a.remove();
       window.URL.revokeObjectURL(url);
     } catch (error) {
+      toast.error("Download non riuscito. Riprova tra qualche secondo");
       console.error(error);
     }
+    onDownloadEvent(false);
   };
 
   const handleArchiveDelete = async (id) => {
@@ -126,8 +173,6 @@ export default function Home() {
   };
 
   useEffect(() => {
-    // handleInitialLoad();
-
     if (!socketRef.current) {
       socketRef.current = io(import.meta.env.VITE_API_ENDPOINT, {
         transports: ["websocket"],
@@ -284,13 +329,16 @@ export default function Home() {
         {selectedPaste && (
           <div className="w-full xl:w-5/12 flex flex-col items-center justify-center">
             <div className="w-full bg-white p-6 rounded-xl shadow-xl flex flex-col gap-4 flex-1">
-              <h2 className="text-xl font-semibold text-gray-800">
-                {selectedPaste.created_at
-                  ? `Paste del ${new Date(
-                      selectedPaste.created_at
-                    ).toLocaleString("it-IT")}`
-                  : "Nuova bozza appunti"}
-              </h2>
+              <div className="flex justify-between items-center">
+                <h2 className="text-xl font-semibold text-gray-800">
+                  {selectedPaste.created_at
+                    ? `Paste del ${new Date(
+                        selectedPaste.created_at
+                      ).toLocaleString("it-IT")}`
+                    : "Nuova bozza appunti"}
+                </h2>
+                <X onClick={() => setSelectedPaste(null)} />
+              </div>
               <input
                 type="text"
                 value={selectedPaste.title}
@@ -360,59 +408,41 @@ export default function Home() {
                 </div>
               )}
               {archiveItems.map((archive) => (
-                <li className="w-full bg-white rounded-xl" key={archive.id}>
-                  {/* File Input */}
-                  <label className="w-full p-6 gap-4 flex justify-between items-center border-2 border-gray-300 rounded-lg">
-                    <span className="text-gray-600 whitespace-nowrap">
-                      <span className="hidden lg:inline font-semibold">
-                        {archive.title.slice(0, 45)}
-                      </span>
-                      <span className="inline lg:hidden font-semibold">
-                        {archive.title.slice(0, 18)}
-                      </span>
-                      <br />
-                      <span>
-                        {new Date(archive.created_at).toLocaleString("it-IT")}
-                      </span>
-                    </span>
-                    <span className="flex gap-4">
-                      <Download
-                        onClick={() =>
-                          handleArchiveDownload(archive.id, archive.title)
-                        }
-                        className="w-7 h-7 text-blue-600 hover:text-blue-700 transition cursor-pointer mb-2"
-                      />
-
-                      <Trash
-                        onClick={() => handleArchiveDelete(archive.id)}
-                        className="w-7 h-7 text-red-600 hover:text-red-700 transition cursor-pointer mb-2"
-                        size={8}
-                      />
-                    </span>
-                  </label>
-                </li>
+                <UploadedFile
+                  key={archive.id}
+                  archive={archive}
+                  handleArchiveDelete={handleArchiveDelete}
+                  handleArchiveDownload={handleArchiveDownload}
+                />
               ))}
             </ul>
 
             <div className="w-full bg-white rounded-xl flex flex-col">
               {/* File Input */}
-              <label className="w-full flex flex-col items-center justify-center border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-blue-400 transition">
-                <span className="text-gray-600">
+              <label
+                className={`w-full flex flex-col items-center justify-center border-2 border-dashed border-gray-300 rounded-lg ${
+                  isUploading
+                    ? "animate-pulse"
+                    : "cursor-pointer hover:border-blue-400"
+                }`}
+              >
+                <div className="text-gray-600">
                   {isUploading ? (
-                    <div className="flex align-middle justify-between gap-3">
-                      <div className="flex items-center justify-center">
+                    <div className="flex items-center justify-between gap-4 ">
+                      <div className="flex items-center justify-center py-4">
                         <div className="w-8 h-8 border-4 border-blue-300 border-t-blue-900 rounded-full animate-spin"></div>
                       </div>
-                      Carico {file.name.slice(0, 35)}...
+                      <span>Carico {file?.name.slice(0, 35)}...</span>
                     </div>
                   ) : (
-                    <div className="flex items-center justify-center gap-4">
-                      Carica un documento
-                      <CloudUpload className="w-7 h-7 mt-2 text-blue-500 mb-2" />
+                    <div className="flex items-center justify-center gap-4 my-2">
+                      <span>Carica un documento</span>
+                      <CloudUpload className="w-7 h-7  text-blue-500" />
                     </div>
                   )}
-                </span>
+                </div>
                 <input
+                  disabled={isUploading}
                   type="file"
                   className="hidden"
                   onChange={handleFileChange}
