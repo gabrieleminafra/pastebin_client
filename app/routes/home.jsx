@@ -85,23 +85,25 @@ export default function Home() {
         payload
       );
     } catch (error) {
-      toast.error("Caricamento non riuscito.  Controlla la dimensione del file.")
+      toast.error(
+        "Caricamento non riuscito.  Controlla la dimensione del file."
+      );
     }
     setIsUploading(false);
     setFile(null);
   };
 
-  const handleArchiveDownload = async (path) => {
+  const handleArchiveDownload = async (id, fileName) => {
     try {
       const { data } = await client.get(
         `${import.meta.env.VITE_API_ENDPOINT}/archive/get`,
-        { params: { path: encodeURIComponent(path) }, responseType: "blob" }
+        { params: { id }, responseType: "blob" }
       );
 
       const url = window.URL.createObjectURL(new Blob([data]));
       const a = document.createElement("a");
       a.href = url;
-      a.download = path.split("/").pop();
+      a.download = fileName;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -134,7 +136,7 @@ export default function Home() {
       });
 
       socketRef.current.on("disconnect", () => {
-        setIsLoading(true)
+        setIsLoading(true);
       });
 
       socketRef.current.on("new_paste", (payload) => {
@@ -228,13 +230,20 @@ export default function Home() {
   return (
     <Fragment>
       <Toaster />
+      {/* {isLoading && ( */}
       <div
-        className={`flex flex-col xl:flex-row h-screen bg-gray-100 p-4 py-12 gap-4 transition-opacity ${
-          isLoading
-            ? "opacity-40 pointer-events-none"
-            : "opacity-100 pointer-events-auto"
-        }`}
+        className={`${
+          isLoading ? "opacity-100" : "opacity-0 pointer-events-none"
+        } fixed inset-0 flex items-center justify-center transition-opacity duration-500 bg-white/50`}
       >
+        <div className="flex flex-col items-center p-6 bg-white rounded-2xl shadow-lg opacity-100">
+          <div className="animate-spin h-10 w-10 border-4 border-blue-500 border-t-transparent rounded-full mb-4"></div>
+          <p className="text-lg font-semibold text-gray-700">Sincronizzo...</p>
+        </div>
+      </div>
+      {/* )} */}
+
+      <div className="flex flex-col xl:flex-row h-screen bg-gray-100 p-4 py-12 gap-4">
         <div className="w-full xl:w-2/12 bg-white p-6 rounded-2xl shadow-xl flex flex-col gap-4">
           <h2 className="text-xl font-semibold text-gray-800">
             Tutti gli appunti
@@ -345,7 +354,9 @@ export default function Home() {
                   </span>
                   <span className="flex gap-4">
                     <Download
-                      onClick={() => handleArchiveDownload(archive.path)}
+                      onClick={() =>
+                        handleArchiveDownload(archive.id, archive.title)
+                      }
                       className="w-7 h-7 text-blue-600 hover:text-blue-700 transition cursor-pointer mb-2"
                     />
 
