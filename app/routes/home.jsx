@@ -23,6 +23,8 @@ const INITIAL_PASTE_DATA = {
   id: null,
   title: "",
   content: "",
+  created_at: null,
+  archived: 0,
 };
 
 const UploadedFile = ({
@@ -78,7 +80,7 @@ export default function Home() {
   const [pendingChanges, setPendingChanges] = useState(0);
 
   const [file, setFile] = useState(null);
-  const [isFocused, setIsFocused] = useState(true);
+  const [isFocused, setIsFocused] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isFullScreen, setFullScreen] = useState(false);
@@ -102,6 +104,8 @@ export default function Home() {
       await client.delete(
         `${import.meta.env.VITE_API_ENDPOINT}/clipboard/${id}/delete`
       );
+      setSelectedPaste(null);
+      setFullScreen(false);
     } catch (error) {
       console.error(error);
     }
@@ -247,7 +251,10 @@ export default function Home() {
     }
 
     if (!workingItem) {
-      setSelectedPaste(null);
+      setSelectedPaste((state) => ({ ...state, id: null, created_at: null }));
+      toast.success(
+        "Il blocco è stato eliminato da un altro utente. Stai ora lavorando su una versione locale."
+      );
       return;
     }
 
@@ -280,7 +287,7 @@ export default function Home() {
 
   return (
     <Fragment>
-      <Toaster />
+      <Toaster toastOptions={{ duration: 5000 }} />
       <div
         className={`${
           isLoading ? "opacity-100" : "opacity-0 pointer-events-none"
