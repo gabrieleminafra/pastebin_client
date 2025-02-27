@@ -73,6 +73,8 @@ const UploadedFile = ({
 
 export default function Home() {
   const socketRef = useRef(null);
+  const selectedPasteRef = useRef(null);
+  const isFocusedRef = useRef(false);
 
   const [selectedPaste, setSelectedPaste] = useState(null);
   const [pasteItems, setPasteItems] = useState([]);
@@ -80,7 +82,6 @@ export default function Home() {
   const [pendingChanges, setPendingChanges] = useState(0);
 
   const [file, setFile] = useState(null);
-  const [isFocused, setIsFocused] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isFullScreen, setFullScreen] = useState(false);
@@ -89,10 +90,11 @@ export default function Home() {
   const handlePastePublish = async (body) => {
     try {
       const { data } = await client.post(
-        import.meta.env.VITE_API_ENDPOINT + "/clipboard/publish",
-        body
+        import.meta.env.VITE_API_ENDPOINT + "/clipboard",
+        { ...body, client_id: socketRef.current.id }
       );
 
+      setPasteItems((state) => [...state, data]);
       setSelectedPaste(data);
     } catch (error) {
       console.error(error);
@@ -101,14 +103,65 @@ export default function Home() {
 
   const handlePasteDelete = async (id) => {
     try {
-      await client.delete(
-        `${import.meta.env.VITE_API_ENDPOINT}/clipboard/${id}/delete`
-      );
+      await client.delete(`${import.meta.env.VITE_API_ENDPOINT}/clipboard`, {
+        params: {
+          client_id: socketRef.current.id,
+          id,
+        },
+      });
+
+      setPasteItems((state) => state.filter((item) => item.id !== id));
+
       setSelectedPaste(null);
       setFullScreen(false);
     } catch (error) {
       console.error(error);
     }
+  };
+
+  const handlePasteDeleteEvent = (payload) => {
+    setPasteItems((state) => state.filter((item) => item.id !== payload));
+
+    if (!selectedPasteRef.current) return;
+
+    if (selectedPasteRef.current.id == payload) {
+      setSelectedPaste((state) => ({
+        ...state,
+        id: null,
+        created_at: null,
+      }));
+      toast.success(
+        "Il blocco è stato eliminato da un altro utente. Stai ora lavorando su una versione locale."
+      );
+      return;
+    }
+  };
+
+  const handlePasteUpdateEvent = (payload) => {
+    setPasteItems((state) =>
+      state.map((item) => {
+        if (item.id === payload.id) return payload;
+        return item;
+      })
+    );
+
+    if (!selectedPasteRef.current.id) return;
+
+    console.log(selectedPasteRef.current.id, payload.id, isFocusedRef.current);
+
+    if (selectedPasteRef.current.id == payload.id && isFocusedRef.current) {
+      setSelectedPaste((state) => ({
+        ...state,
+        id: null,
+        created_at: null,
+      }));
+      toast.success(
+        "Il blocco è stato modificato da un altro utente. Stai ora lavorando su una versione locale."
+      );
+      return;
+    }
+
+    setSelectedPaste(payload);
   };
 
   const handleInitialLoad = async (body) => {
@@ -207,16 +260,11 @@ export default function Home() {
       });
 
       socketRef.current.on("delete_paste", (payload) => {
-        setPasteItems((state) => state.filter((item) => item.id !== payload));
+        handlePasteDeleteEvent(payload);
       });
 
       socketRef.current.on("update_paste", (payload) => {
-        setPasteItems((state) =>
-          state.map((item) => {
-            if (item.id === payload.id) return payload;
-            return item;
-          })
-        );
+        handlePasteUpdateEvent(payload);
       });
     }
 
@@ -233,7 +281,8 @@ export default function Home() {
   }, [file]);
 
   useEffect(() => {
-    if (pendingChanges < 10) {
+    selectedPasteRef.current = selectedPaste;
+    if (pendingChanges < 5) {
       setPendingChanges(pendingChanges + 1);
       return;
     }
@@ -242,33 +291,22 @@ export default function Home() {
     setPendingChanges(0);
   }, [selectedPaste]);
 
-  useEffect(() => {
-    if (!pasteItems || !selectedPaste?.id) return;
-    const workingItem = pasteItems.find((item) => item.id == selectedPaste.id);
-
-    if (workingItem && isFocused) {
-      return;
-    }
-
-    if (!workingItem) {
-      setSelectedPaste((state) => ({ ...state, id: null, created_at: null }));
-      toast.success(
-        "Il blocco è stato eliminato da un altro utente. Stai ora lavorando su una versione locale."
-      );
-      return;
-    }
-
-    setSelectedPaste(workingItem ?? selectedPaste);
-  }, [pasteItems]);
-
   const emitUpdateEvent = () => {
     if (!selectedPaste?.id) return;
-    socketRef.current.emit("edit_paste", {
+    const payload = {
       title: selectedPaste.title,
       content: selectedPaste.content,
       id: selectedPaste.id,
       client_id: socketRef.current.id,
-    });
+    };
+
+    setPasteItems((state) =>
+      state.map((item) => {
+        if (item.id === payload.id) return payload;
+        return item;
+      })
+    );
+    socketRef.current.emit("edit_paste", payload);
   };
 
   const handleFileChange = (event) => {
@@ -276,11 +314,11 @@ export default function Home() {
   };
 
   const handleFocus = () => {
-    setIsFocused(true);
+    isFocusedRef.current = true;
   };
 
   const handleBlur = () => {
-    setIsFocused(false);
+    isFocusedRef.current = false;
     setPendingChanges(0);
     emitUpdateEvent();
   };
