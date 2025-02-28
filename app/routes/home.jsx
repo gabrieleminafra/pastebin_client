@@ -145,7 +145,7 @@ export default function Home() {
       })
     );
 
-    if (!selectedPasteRef.current.id) return;
+    if (!selectedPasteRef.current?.id) return;
 
     if (selectedPasteRef.current.id == payload.id && isFocusedRef.current) {
       setSelectedPaste((state) => ({
