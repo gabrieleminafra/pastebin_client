@@ -131,7 +131,7 @@ export default function Home() {
         created_at: null,
       }));
       toast.success(
-        "Il blocco è stato eliminato da un altro utente. Stai ora lavorando su una versione locale."
+        "Questi appunti sono stati eliminati da un altro utente. Stai ora lavorando su una versione locale."
       );
       return;
     }
@@ -147,16 +147,15 @@ export default function Home() {
 
     if (!selectedPasteRef.current.id) return;
 
-    console.log(selectedPasteRef.current.id, payload.id, isFocusedRef.current);
-
     if (selectedPasteRef.current.id == payload.id && isFocusedRef.current) {
       setSelectedPaste((state) => ({
         ...state,
+        title: `${state.title} - Copia`,
         id: null,
         created_at: null,
       }));
       toast.success(
-        "Il blocco è stato modificato da un altro utente. Stai ora lavorando su una versione locale."
+        "Questi appunti sono stati modificati da un altro utente. Stai ora lavorando su una versione locale."
       );
       return;
     }
@@ -188,10 +187,13 @@ export default function Home() {
     const payload = new FormData();
     payload.append("file", data);
     try {
-      await client.post(
-        `${import.meta.env.VITE_API_ENDPOINT}/archive/publish`,
-        payload
+      const { data } = await client.post(
+        `${import.meta.env.VITE_API_ENDPOINT}/archive`,
+        payload,
+        { params: { client_id: socketRef.current.id } }
       );
+
+      setArchiveItems((state) => [...state, data]);
     } catch (error) {
       toast.error("Caricamento non riuscito. Il file non deve superare 1GB");
     }
@@ -204,7 +206,7 @@ export default function Home() {
 
     try {
       const { data } = await client.get(
-        `${import.meta.env.VITE_API_ENDPOINT}/archive/get`,
+        `${import.meta.env.VITE_API_ENDPOINT}/archive/download`,
         { params: { id }, responseType: "blob" }
       );
 
@@ -225,9 +227,11 @@ export default function Home() {
 
   const handleArchiveDelete = async (id) => {
     try {
-      await client.delete(
-        `${import.meta.env.VITE_API_ENDPOINT}/archive/${id}/delete`
-      );
+      await client.delete(`${import.meta.env.VITE_API_ENDPOINT}/archive`, {
+        params: { id, client_id: socketRef.current.id },
+      });
+
+      setArchiveItems((state) => state.filter((item) => item.id !== id));
     } catch (error) {
       console.error(error);
     }
@@ -292,7 +296,8 @@ export default function Home() {
   }, [selectedPaste]);
 
   const emitUpdateEvent = () => {
-    if (!selectedPaste?.id) return;
+    if (!selectedPaste?.id || !isFocusedRef.current) return;
+
     const payload = {
       title: selectedPaste.title,
       content: selectedPaste.content,
@@ -318,9 +323,9 @@ export default function Home() {
   };
 
   const handleBlur = () => {
-    isFocusedRef.current = false;
-    setPendingChanges(0);
     emitUpdateEvent();
+    setPendingChanges(0);
+    isFocusedRef.current = false;
   };
 
   return (
@@ -342,7 +347,7 @@ export default function Home() {
         {isInitialLoadComplete && (
           <div className="flex flex-col xl:flex-row h-max xl:h-screen gap-8 xl:gap-4 p-4 py-12">
             {!isFullScreen && (
-              <div className="w-full xl:min-w-3/12 flex-1 bg-white p-6 rounded-xl shadow-xl">
+              <div className="w-full xl:min-w-3/12 flex-1 bg-white p-4 xl:p-6 rounded-xl shadow-xl">
                 <div className="flex flex-col justify-between h-full gap-4">
                   <h2 className="text-xl font-semibold text-gray-800">
                     Appunti
@@ -384,7 +389,7 @@ export default function Home() {
 
             {selectedPaste && (
               <div className="w-full xl:min-w-4/12 flex flex-col items-center justify-center h-full">
-                <div className="w-full bg-white p-6 rounded-xl shadow-xl flex flex-col gap-4 flex-1">
+                <div className="w-full bg-white p-4 xl:p-6 rounded-xl shadow-xl flex flex-col gap-4 flex-1">
                   <div className="flex justify-between items-center">
                     <h2 className="text-xl font-semibold text-gray-800">
                       {selectedPaste.created_at
@@ -433,7 +438,7 @@ export default function Home() {
                     onBlur={handleBlur}
                     className="w-full p-3 border border-gray-300 rounded-xl h-full focus:outline-none focus:ring-2 focus:ring-blue-400"
                     placeholder="Scrivi qui..."
-                    rows={18}
+                    rows={15}
                   ></textarea>
 
                   {!selectedPaste.id ? (
@@ -463,7 +468,7 @@ export default function Home() {
             )}
 
             {!isFullScreen && (
-              <div className="w-full xl:min-w-4/12 flex-1 bg-white p-6 rounded-xl shadow-xl">
+              <div className="w-full xl:min-w-4/12 flex-1 bg-white p-4 xl:p-6 rounded-xl shadow-xl">
                 <div className="flex flex-col justify-between h-full gap-4">
                   <h2 className="text-xl font-semibold text-gray-800">
                     Documenti
