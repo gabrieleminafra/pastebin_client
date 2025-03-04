@@ -19,6 +19,22 @@ export function meta() {
   return [{ title: "Pastebin" }];
 }
 
+function insertOrReplaceAtPosition(str, index, count, add) {
+  if (index < 0) {
+    index = str.length + index;
+    if (index < 0) {
+      index = 0;
+    }
+  }
+
+  return str.slice(0, index) + (add || "") + str.slice(index + count);
+}
+
+const EVENT_TARGET_ENUM = {
+  TITLE: "title",
+  CONTENT: "content",
+};
+
 const INITIAL_PASTE_DATA = {
   id: null,
   title: "",
@@ -74,13 +90,11 @@ const UploadedFile = ({
 export default function Home() {
   const socketRef = useRef(null);
   const selectedPasteRef = useRef(null);
-  const isFocusedRef = useRef(false);
+  const editorRef = useRef(null);
 
   const [selectedPaste, setSelectedPaste] = useState(null);
   const [pasteItems, setPasteItems] = useState([]);
   const [archiveItems, setArchiveItems] = useState([]);
-  const [pendingChanges, setPendingChanges] = useState(0);
-
   const [file, setFile] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -140,27 +154,18 @@ export default function Home() {
   const handlePasteUpdateEvent = (payload) => {
     setPasteItems((state) =>
       state.map((item) => {
-        if (item.id === payload.id) return payload;
+        if (item.id === payload.id)
+          return { ...item, [payload.target]: payload.value };
         return item;
       })
     );
 
     if (!selectedPasteRef.current?.id) return;
 
-    if (selectedPasteRef.current.id == payload.id && isFocusedRef.current) {
-      setSelectedPaste((state) => ({
-        ...state,
-        title: `${state.title} - Copia`,
-        id: null,
-        created_at: null,
-      }));
-      toast.success(
-        "Questi appunti sono stati modificati da un altro utente. Stai ora lavorando su una versione locale."
-      );
-      return;
-    }
-
-    setSelectedPaste(payload);
+    setSelectedPaste((state) => ({
+      ...state,
+      [payload.target]: payload.value,
+    }));
   };
 
   const handleInitialLoad = async (body) => {
@@ -270,6 +275,23 @@ export default function Home() {
       socketRef.current.on("update_paste", (payload) => {
         handlePasteUpdateEvent(payload);
       });
+
+      socketRef.current.on("incremental_update_paste", (payload) => {
+        const deleteAhead = parseInt(payload.e) - parseInt(payload.s);
+
+        const updatedValue = insertOrReplaceAtPosition(
+          selectedPasteRef.current[payload.t],
+          payload.s,
+          deleteAhead,
+          payload.v
+        );
+
+        if (selectedPasteRef.current.id === payload.i)
+          setSelectedPaste({
+            ...selectedPasteRef.current,
+            [payload.t]: updatedValue,
+          });
+      });
     }
 
     return () => {
@@ -286,46 +308,49 @@ export default function Home() {
 
   useEffect(() => {
     selectedPasteRef.current = selectedPaste;
-    if (pendingChanges < 5) {
-      setPendingChanges(pendingChanges + 1);
-      return;
-    }
-
-    emitUpdateEvent();
-    setPendingChanges(0);
   }, [selectedPaste]);
 
-  const emitUpdateEvent = () => {
-    if (!selectedPaste?.id || !isFocusedRef.current) return;
+  const emitUpdateEvent = (target, value, id) => {
+    if (!selectedPaste?.id) return;
 
     const payload = {
-      title: selectedPaste.title,
-      content: selectedPaste.content,
-      id: selectedPaste.id,
+      target,
+      value,
+      id,
       client_id: socketRef.current.id,
     };
 
     setPasteItems((state) =>
       state.map((item) => {
-        if (item.id === payload.id) return payload;
+        if (item.id === payload.id)
+          return { ...item, [payload.target]: payload.value };
         return item;
       })
     );
     socketRef.current.emit("edit_paste", payload);
   };
 
+  const emitWriteEvent = (target, id, value) => {
+    if (!selectedPaste?.id) return;
+
+    const payload = {
+      v: value,
+      s: editorRef.current.selectionStart,
+      e: editorRef.current.selectionEnd,
+      t: target,
+      i: id,
+      c: socketRef.current.id,
+    };
+
+    socketRef.current.emit("write_paste", payload);
+  };
+
   const handleFileChange = (event) => {
     setFile(event.target.files[0]);
   };
 
-  const handleFocus = () => {
-    isFocusedRef.current = true;
-  };
-
-  const handleBlur = () => {
-    emitUpdateEvent();
-    setPendingChanges(0);
-    isFocusedRef.current = false;
+  const handleBlur = (target, value) => {
+    emitUpdateEvent(target, value, selectedPasteRef.current.id);
   };
 
   return (
@@ -371,7 +396,7 @@ export default function Home() {
                             : "bg-gray-200"
                         }`}
                       >
-                        {item.title.slice(0, 30)}
+                        {item.title.slice(0, 30) || "Appunti senza nome"}
                       </li>
                     ))}
                   </ul>
@@ -415,27 +440,46 @@ export default function Home() {
                   <input
                     type="text"
                     value={selectedPaste.title}
-                    onChange={(e) =>
+                    onChange={(e) => {
                       setSelectedPaste((state) => ({
                         ...state,
                         title: e.target.value,
-                      }))
+                      }));
+                    }}
+                    onBlur={(e) =>
+                      handleBlur(EVENT_TARGET_ENUM.TITLE, e.target.value)
                     }
-                    onFocus={handleFocus}
-                    onBlur={handleBlur}
                     className="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-400"
                     placeholder="Inserisci un titolo"
                   />
                   <textarea
+                    ref={editorRef}
                     value={selectedPaste.content}
-                    onChange={(e) =>
+                    onChange={(e) => {
                       setSelectedPaste((state) => ({
                         ...state,
                         content: e.target.value,
-                      }))
+                      }));
+
+                      if (e.nativeEvent.inputType == "insertText") {
+                        emitWriteEvent(
+                          EVENT_TARGET_ENUM.CONTENT,
+                          selectedPasteRef.current.id,
+                          e.nativeEvent.data
+                        );
+
+                        return;
+                      }
+
+                      emitUpdateEvent(
+                        EVENT_TARGET_ENUM.CONTENT,
+                        e.target.value,
+                        selectedPasteRef.current.id
+                      );
+                    }}
+                    onBlur={(e) =>
+                      handleBlur(EVENT_TARGET_ENUM.CONTENT, e.target.value)
                     }
-                    onFocus={handleFocus}
-                    onBlur={handleBlur}
                     className="w-full p-3 border border-gray-300 rounded-xl h-full focus:outline-none focus:ring-2 focus:ring-blue-400"
                     placeholder="Scrivi qui..."
                     rows={15}
@@ -456,7 +500,7 @@ export default function Home() {
                     </button>
                   ) : (
                     <button
-                      className="p-3 bg-red-400 text-white rounded-xl font-semibold cursor-pointer transition flex justify-center"
+                      className="p-3 bg-red-400 hover:bg-red-600  text-white rounded-xl font-semibold cursor-pointer transition flex justify-center"
                       onClick={() => handlePasteDelete(selectedPaste.id)}
                     >
                       Archivia questi appunti
