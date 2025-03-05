@@ -218,13 +218,28 @@ export default function Home() {
     });
   };
 
-  const handleInitialLoad = async (body) => {
+  const handleInitialLoad = async () => {
     setIsLoading(true);
     try {
       Promise.all([
         await client
           .get(import.meta.env.VITE_API_ENDPOINT + "/clipboard/all")
-          .then(({ data }) => setPasteItems(data)),
+          .then(({ data }) => {
+            if (
+              selectedPasteRef.id &&
+              !data.find((paste) => paste.id == selectedPasteRef.id)
+            ) {
+              setSelectedPaste((state) => ({
+                ...state,
+                id: null,
+                created_at: null,
+              }));
+              toast.success(
+                "Questi appunti sono stati eliminati da un altro utente. Stai ora lavorando su una versione locale."
+              );
+            }
+            setPasteItems(data);
+          }),
         await client
           .get(import.meta.env.VITE_API_ENDPOINT + "/archive/all")
           .then(({ data }) => setArchiveItems(data)),
