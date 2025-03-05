@@ -293,7 +293,6 @@ export default function Home() {
   };
 
   const handleContentUpdate = (prevValue, value, id) => {
-    console.log(pendingChanges, currentACS);
     if (pendingChanges < currentACS) {
       setPendingChanges(pendingChanges + 1);
       if (currentACS < 100) emitWriteEvent(prevValue, value, id);
