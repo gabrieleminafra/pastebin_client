@@ -19,17 +19,6 @@ export function meta() {
   return [{ title: "Pastebin" }];
 }
 
-function insertOrReplaceAtPosition(str, index, count, add) {
-  if (index < 0) {
-    index = str.length + index;
-    if (index < 0) {
-      index = 0;
-    }
-  }
-
-  return str.slice(0, index) + (add || "") + str.slice(index + count);
-}
-
 const EVENT_TARGET_ENUM = {
   TITLE: "title",
   CONTENT: "content",
@@ -90,9 +79,11 @@ const UploadedFile = ({
 export default function Home() {
   const socketRef = useRef(null);
   const selectedPasteRef = useRef(null);
-  const editorRef = useRef(null);
+  const currentValueRef = useRef(null);
 
   const [selectedPaste, setSelectedPaste] = useState(null);
+  const [currentACS, setCurrentACS] = useState(1);
+  const [pendingChanges, setPendingChanges] = useState(0);
   const [pasteItems, setPasteItems] = useState([]);
   const [archiveItems, setArchiveItems] = useState([]);
   const [file, setFile] = useState(null);
@@ -154,18 +145,77 @@ export default function Home() {
   const handlePasteUpdateEvent = (payload) => {
     setPasteItems((state) =>
       state.map((item) => {
-        if (item.id === payload.id)
-          return { ...item, [payload.target]: payload.value };
+        if (item.id === payload.id) {
+          return {
+            ...item,
+            [payload.target]: payload.value,
+          };
+        }
         return item;
       })
     );
 
     if (!selectedPasteRef.current?.id) return;
 
-    setSelectedPaste((state) => ({
-      ...state,
-      [payload.target]: payload.value,
-    }));
+    setSelectedPaste((state) => {
+      let localChunks = {};
+      let chunkCount = 0;
+
+      for (
+        let index = 0;
+        index < state[payload.target].length;
+        index += payload.acs
+      ) {
+        localChunks[index] = state[payload.target].slice(
+          index,
+          index + payload.acs
+        );
+        chunkCount++;
+      }
+
+      for (const key of Object.keys(payload.value)) {
+        if (!payload.value[key]) delete localChunks[key];
+
+        localChunks[key] = payload.value[key];
+      }
+
+      const updatedString = Object.values(localChunks).join("");
+
+      return {
+        ...state,
+        [payload.target]: updatedString,
+      };
+    });
+  };
+
+  const handlePasteWriteEvent = (payload) => {
+    if (
+      !selectedPasteRef.current?.id ||
+      payload.i != selectedPasteRef.current.id
+    )
+      return;
+
+    setCurrentACS(payload.a);
+    setSelectedPaste((state) => {
+      let localChunks = {};
+
+      for (let seq = 0; seq < state.content.length; seq += payload.a) {
+        localChunks[seq] = state.content.slice(seq, seq + payload.a);
+      }
+
+      for (const key of Object.keys(payload.p)) {
+        if (!payload.p[key]) delete localChunks[key];
+
+        localChunks[key] = payload.p[key];
+      }
+
+      const updatedString = Object.values(localChunks).join("");
+
+      return {
+        ...state,
+        content: updatedString,
+      };
+    });
   };
 
   const handleInitialLoad = async (body) => {
@@ -242,6 +292,95 @@ export default function Home() {
     }
   };
 
+  const handleContentUpdate = (prevValue, value, id) => {
+    console.log(pendingChanges, currentACS);
+    if (pendingChanges < currentACS) {
+      setPendingChanges(pendingChanges + 1);
+      if (currentACS < 100) emitWriteEvent(prevValue, value, id);
+      return;
+    }
+
+    emitUpdateEvent(EVENT_TARGET_ENUM.CONTENT, value, id);
+
+    setPendingChanges(0);
+  };
+
+  const handleFileChange = (event) => {
+    setFile(event.target.files[0]);
+  };
+
+  const handleBlur = (target, value) => {
+    emitUpdateEvent(target, value, selectedPasteRef.current.id);
+    setPendingChanges(0);
+    setCurrentACS(1);
+  };
+
+  const emitWriteEvent = (prevValue, value, id) => {
+    if (!selectedPasteRef.current?.id) return;
+
+    if (prevValue == value) return;
+
+    const adaptiveChunkSize = Math.floor(parseInt(prevValue?.length / 100)) + 1;
+    setCurrentACS(adaptiveChunkSize);
+
+    let compareChunks = {};
+    let updatedChunks = {};
+    let updatesToApply = {};
+
+    for (
+      let seq = 0;
+      seq < Math.max(prevValue?.length, value?.length);
+      seq += adaptiveChunkSize
+    ) {
+      compareChunks[seq] = prevValue?.slice(seq, seq + adaptiveChunkSize);
+      updatedChunks[seq] = value?.slice(seq, seq + adaptiveChunkSize);
+
+      if (updatedChunks[seq] == compareChunks[seq]) continue;
+
+      if (!updatedChunks[seq]) {
+        updatesToApply[seq] = null;
+        continue;
+      }
+
+      updatesToApply[seq] = updatedChunks[seq];
+    }
+
+    for (const key of Object.keys(updatedChunks).filter(
+      (key) => !Object.keys(compareChunks).includes(key)
+    )) {
+      updatesToApply[key] = updatedChunks[key];
+    }
+
+    const payload = {
+      i: id,
+      p: updatesToApply,
+      c: socketRef.current.id,
+      a: adaptiveChunkSize,
+    };
+
+    socketRef.current.emit("write_paste", payload);
+  };
+
+  const emitUpdateEvent = (target, value, id) => {
+    if (!selectedPaste?.id) return;
+
+    const payload = {
+      target,
+      value,
+      id,
+      client_id: socketRef.current.id,
+    };
+
+    setPasteItems((state) =>
+      state.map((item) => {
+        if (item.id === payload.id)
+          return { ...item, [payload.target]: payload.value };
+        return item;
+      })
+    );
+    socketRef.current.emit("edit_paste", payload);
+  };
+
   useEffect(() => {
     if (!socketRef.current) {
       socketRef.current = io(import.meta.env.VITE_API_ENDPOINT, {
@@ -276,21 +415,8 @@ export default function Home() {
         handlePasteUpdateEvent(payload);
       });
 
-      socketRef.current.on("incremental_update_paste", (payload) => {
-        const deleteAhead = parseInt(payload.e) - parseInt(payload.s);
-
-        const updatedValue = insertOrReplaceAtPosition(
-          selectedPasteRef.current[payload.t],
-          payload.s,
-          deleteAhead,
-          payload.v
-        );
-
-        if (selectedPasteRef.current.id === payload.i)
-          setSelectedPaste({
-            ...selectedPasteRef.current,
-            [payload.t]: updatedValue,
-          });
+      socketRef.current.on("incremental_write_paste", (payload) => {
+        handlePasteWriteEvent(payload);
       });
     }
 
@@ -309,49 +435,6 @@ export default function Home() {
   useEffect(() => {
     selectedPasteRef.current = selectedPaste;
   }, [selectedPaste]);
-
-  const emitUpdateEvent = (target, value, id) => {
-    if (!selectedPaste?.id) return;
-
-    const payload = {
-      target,
-      value,
-      id,
-      client_id: socketRef.current.id,
-    };
-
-    setPasteItems((state) =>
-      state.map((item) => {
-        if (item.id === payload.id)
-          return { ...item, [payload.target]: payload.value };
-        return item;
-      })
-    );
-    socketRef.current.emit("edit_paste", payload);
-  };
-
-  const emitWriteEvent = (target, id, value) => {
-    if (!selectedPaste?.id) return;
-
-    const payload = {
-      v: value,
-      s: editorRef.current.selectionStart,
-      e: editorRef.current.selectionEnd,
-      t: target,
-      i: id,
-      c: socketRef.current.id,
-    };
-
-    socketRef.current.emit("write_paste", payload);
-  };
-
-  const handleFileChange = (event) => {
-    setFile(event.target.files[0]);
-  };
-
-  const handleBlur = (target, value) => {
-    emitUpdateEvent(target, value, selectedPasteRef.current.id);
-  };
 
   return (
     <Fragment>
@@ -453,26 +536,18 @@ export default function Home() {
                     placeholder="Inserisci un titolo"
                   />
                   <textarea
-                    ref={editorRef}
                     value={selectedPaste.content}
+                    onBeforeInput={(e) => {
+                      currentValueRef.current = e.target.value;
+                    }}
                     onChange={(e) => {
                       setSelectedPaste((state) => ({
                         ...state,
                         content: e.target.value,
                       }));
 
-                      if (e.nativeEvent.inputType == "insertText") {
-                        emitWriteEvent(
-                          EVENT_TARGET_ENUM.CONTENT,
-                          selectedPasteRef.current.id,
-                          e.nativeEvent.data
-                        );
-
-                        return;
-                      }
-
-                      emitUpdateEvent(
-                        EVENT_TARGET_ENUM.CONTENT,
+                      handleContentUpdate(
+                        currentValueRef.current,
                         e.target.value,
                         selectedPasteRef.current.id
                       );
