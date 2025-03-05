@@ -226,8 +226,8 @@ export default function Home() {
           .get(import.meta.env.VITE_API_ENDPOINT + "/clipboard/all")
           .then(({ data }) => {
             if (
-              selectedPasteRef.id &&
-              !data.find((paste) => paste.id == selectedPasteRef.id)
+              selectedPasteRef.current.id &&
+              !data.find((paste) => paste.id == selectedPasteRef.current.id)
             ) {
               setSelectedPaste((state) => ({
                 ...state,
