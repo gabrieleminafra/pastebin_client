@@ -226,7 +226,7 @@ export default function Home() {
           .get(import.meta.env.VITE_API_ENDPOINT + "/clipboard/all")
           .then(({ data }) => {
             if (
-              selectedPasteRef.current.id &&
+              selectedPasteRef.current?.id &&
               !data.find((paste) => paste.id == selectedPasteRef.current.id)
             ) {
               setSelectedPaste((state) => ({
@@ -238,6 +238,7 @@ export default function Home() {
                 "Questi appunti sono stati eliminati da un altro utente. Stai ora lavorando su una versione locale."
               );
             }
+            
             setPasteItems(data);
           }),
         await client
