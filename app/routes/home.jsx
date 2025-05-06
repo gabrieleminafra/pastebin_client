@@ -19,6 +19,11 @@ export function meta() {
   return [{ title: "Pastebin" }];
 }
 
+const EVENT_TARGET_ENUM = {
+  TITLE: "title",
+  CONTENT: "content",
+};
+
 const INITIAL_PASTE_DATA = {
   id: null,
   title: "",
@@ -74,13 +79,13 @@ const UploadedFile = ({
 export default function Home() {
   const socketRef = useRef(null);
   const selectedPasteRef = useRef(null);
-  const isFocusedRef = useRef(false);
+  const currentValueRef = useRef(null);
 
   const [selectedPaste, setSelectedPaste] = useState(null);
+  const [currentACS, setCurrentACS] = useState(1);
+  const [pendingChanges, setPendingChanges] = useState(0);
   const [pasteItems, setPasteItems] = useState([]);
   const [archiveItems, setArchiveItems] = useState([]);
-  const [pendingChanges, setPendingChanges] = useState(0);
-
   const [file, setFile] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -140,36 +145,102 @@ export default function Home() {
   const handlePasteUpdateEvent = (payload) => {
     setPasteItems((state) =>
       state.map((item) => {
-        if (item.id === payload.id) return payload;
+        if (item.id === payload.id) {
+          return {
+            ...item,
+            [payload.target]: payload.value,
+          };
+        }
         return item;
       })
     );
 
     if (!selectedPasteRef.current?.id) return;
 
-    if (selectedPasteRef.current.id == payload.id && isFocusedRef.current) {
-      setSelectedPaste((state) => ({
-        ...state,
-        title: `${state.title} - Copia`,
-        id: null,
-        created_at: null,
-      }));
-      toast.success(
-        "Questi appunti sono stati modificati da un altro utente. Stai ora lavorando su una versione locale."
-      );
-      return;
-    }
+    setSelectedPaste((state) => {
+      let localChunks = {};
+      let chunkCount = 0;
 
-    setSelectedPaste(payload);
+      for (
+        let index = 0;
+        index < state[payload.target].length;
+        index += payload.acs
+      ) {
+        localChunks[index] = state[payload.target].slice(
+          index,
+          index + payload.acs
+        );
+        chunkCount++;
+      }
+
+      for (const key of Object.keys(payload.value)) {
+        if (!payload.value[key]) delete localChunks[key];
+
+        localChunks[key] = payload.value[key];
+      }
+
+      const updatedString = Object.values(localChunks).join("");
+
+      return {
+        ...state,
+        [payload.target]: updatedString,
+      };
+    });
   };
 
-  const handleInitialLoad = async (body) => {
+  const handlePasteWriteEvent = (payload) => {
+    if (
+      !selectedPasteRef.current?.id ||
+      payload.i != selectedPasteRef.current.id
+    )
+      return;
+
+    setCurrentACS(payload.a);
+    setSelectedPaste((state) => {
+      let localChunks = {};
+
+      for (let seq = 0; seq < state.content.length; seq += payload.a) {
+        localChunks[seq] = state.content.slice(seq, seq + payload.a);
+      }
+
+      for (const key of Object.keys(payload.p)) {
+        if (!payload.p[key]) delete localChunks[key];
+
+        localChunks[key] = payload.p[key];
+      }
+
+      const updatedString = Object.values(localChunks).join("");
+
+      return {
+        ...state,
+        content: updatedString,
+      };
+    });
+  };
+
+  const handleInitialLoad = async () => {
     setIsLoading(true);
     try {
       Promise.all([
         await client
           .get(import.meta.env.VITE_API_ENDPOINT + "/clipboard/all")
-          .then(({ data }) => setPasteItems(data)),
+          .then(({ data }) => {
+            if (
+              selectedPasteRef.current?.id &&
+              !data.find((paste) => paste.id == selectedPasteRef.current.id)
+            ) {
+              setSelectedPaste((state) => ({
+                ...state,
+                id: null,
+                created_at: null,
+              }));
+              toast.success(
+                "Questi appunti sono stati eliminati da un altro utente. Stai ora lavorando su una versione locale."
+              );
+            }
+            
+            setPasteItems(data);
+          }),
         await client
           .get(import.meta.env.VITE_API_ENDPOINT + "/archive/all")
           .then(({ data }) => setArchiveItems(data)),
@@ -237,6 +308,94 @@ export default function Home() {
     }
   };
 
+  const handleContentUpdate = (prevValue, value, id) => {
+    if (pendingChanges < currentACS) {
+      setPendingChanges(pendingChanges + 1);
+      if (currentACS < 100) emitWriteEvent(prevValue, value, id);
+      return;
+    }
+
+    emitUpdateEvent(EVENT_TARGET_ENUM.CONTENT, value, id);
+
+    setPendingChanges(0);
+  };
+
+  const handleFileChange = (event) => {
+    setFile(event.target.files[0]);
+  };
+
+  const handleBlur = (target, value) => {
+    emitUpdateEvent(target, value, selectedPasteRef.current.id);
+    setPendingChanges(0);
+    setCurrentACS(1);
+  };
+
+  const emitWriteEvent = (prevValue, value, id) => {
+    if (!selectedPasteRef.current?.id) return;
+
+    if (prevValue == value) return;
+
+    const adaptiveChunkSize = Math.floor(parseInt(prevValue?.length / 100)) + 1;
+    setCurrentACS(adaptiveChunkSize);
+
+    let compareChunks = {};
+    let updatedChunks = {};
+    let updatesToApply = {};
+
+    for (
+      let seq = 0;
+      seq < Math.max(prevValue?.length, value?.length);
+      seq += adaptiveChunkSize
+    ) {
+      compareChunks[seq] = prevValue?.slice(seq, seq + adaptiveChunkSize);
+      updatedChunks[seq] = value?.slice(seq, seq + adaptiveChunkSize);
+
+      if (updatedChunks[seq] == compareChunks[seq]) continue;
+
+      if (!updatedChunks[seq]) {
+        updatesToApply[seq] = null;
+        continue;
+      }
+
+      updatesToApply[seq] = updatedChunks[seq];
+    }
+
+    for (const key of Object.keys(updatedChunks).filter(
+      (key) => !Object.keys(compareChunks).includes(key)
+    )) {
+      updatesToApply[key] = updatedChunks[key];
+    }
+
+    const payload = {
+      i: id,
+      p: updatesToApply,
+      c: socketRef.current.id,
+      a: adaptiveChunkSize,
+    };
+
+    socketRef.current.emit("write_paste", payload);
+  };
+
+  const emitUpdateEvent = (target, value, id) => {
+    if (!selectedPaste?.id) return;
+
+    const payload = {
+      target,
+      value,
+      id,
+      client_id: socketRef.current.id,
+    };
+
+    setPasteItems((state) =>
+      state.map((item) => {
+        if (item.id === payload.id)
+          return { ...item, [payload.target]: payload.value };
+        return item;
+      })
+    );
+    socketRef.current.emit("edit_paste", payload);
+  };
+
   useEffect(() => {
     if (!socketRef.current) {
       socketRef.current = io(import.meta.env.VITE_API_ENDPOINT, {
@@ -270,6 +429,10 @@ export default function Home() {
       socketRef.current.on("update_paste", (payload) => {
         handlePasteUpdateEvent(payload);
       });
+
+      socketRef.current.on("incremental_write_paste", (payload) => {
+        handlePasteWriteEvent(payload);
+      });
     }
 
     return () => {
@@ -286,47 +449,7 @@ export default function Home() {
 
   useEffect(() => {
     selectedPasteRef.current = selectedPaste;
-    if (pendingChanges < 5) {
-      setPendingChanges(pendingChanges + 1);
-      return;
-    }
-
-    emitUpdateEvent();
-    setPendingChanges(0);
   }, [selectedPaste]);
-
-  const emitUpdateEvent = () => {
-    if (!selectedPaste?.id || !isFocusedRef.current) return;
-
-    const payload = {
-      title: selectedPaste.title,
-      content: selectedPaste.content,
-      id: selectedPaste.id,
-      client_id: socketRef.current.id,
-    };
-
-    setPasteItems((state) =>
-      state.map((item) => {
-        if (item.id === payload.id) return payload;
-        return item;
-      })
-    );
-    socketRef.current.emit("edit_paste", payload);
-  };
-
-  const handleFileChange = (event) => {
-    setFile(event.target.files[0]);
-  };
-
-  const handleFocus = () => {
-    isFocusedRef.current = true;
-  };
-
-  const handleBlur = () => {
-    emitUpdateEvent();
-    setPendingChanges(0);
-    isFocusedRef.current = false;
-  };
 
   return (
     <Fragment>
@@ -371,7 +494,7 @@ export default function Home() {
                             : "bg-gray-200"
                         }`}
                       >
-                        {item.title.slice(0, 30)}
+                        {item.title.slice(0, 30) || "Appunti senza nome"}
                       </li>
                     ))}
                   </ul>
@@ -415,27 +538,38 @@ export default function Home() {
                   <input
                     type="text"
                     value={selectedPaste.title}
-                    onChange={(e) =>
+                    onChange={(e) => {
                       setSelectedPaste((state) => ({
                         ...state,
                         title: e.target.value,
-                      }))
+                      }));
+                    }}
+                    onBlur={(e) =>
+                      handleBlur(EVENT_TARGET_ENUM.TITLE, e.target.value)
                     }
-                    onFocus={handleFocus}
-                    onBlur={handleBlur}
                     className="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-400"
                     placeholder="Inserisci un titolo"
                   />
                   <textarea
                     value={selectedPaste.content}
-                    onChange={(e) =>
+                    onBeforeInput={(e) => {
+                      currentValueRef.current = e.target.value;
+                    }}
+                    onChange={(e) => {
                       setSelectedPaste((state) => ({
                         ...state,
                         content: e.target.value,
-                      }))
+                      }));
+
+                      handleContentUpdate(
+                        currentValueRef.current,
+                        e.target.value,
+                        selectedPasteRef.current.id
+                      );
+                    }}
+                    onBlur={(e) =>
+                      handleBlur(EVENT_TARGET_ENUM.CONTENT, e.target.value)
                     }
-                    onFocus={handleFocus}
-                    onBlur={handleBlur}
                     className="w-full p-3 border border-gray-300 rounded-xl h-full focus:outline-none focus:ring-2 focus:ring-blue-400"
                     placeholder="Scrivi qui..."
                     rows={15}
@@ -456,7 +590,7 @@ export default function Home() {
                     </button>
                   ) : (
                     <button
-                      className="p-3 bg-red-400 text-white rounded-xl font-semibold cursor-pointer transition flex justify-center"
+                      className="p-3 bg-red-400 hover:bg-red-600  text-white rounded-xl font-semibold cursor-pointer transition flex justify-center"
                       onClick={() => handlePasteDelete(selectedPaste.id)}
                     >
                       Archivia questi appunti
