@@ -398,8 +398,8 @@ export default function Home() {
 
   useEffect(() => {
     if (!socketRef.current) {
-      socketRef.current = io("https://paste.gabrieleminafra.me", {
-  	path: '/ws',
+      socketRef.current = io(import.meta.env.VITE_API_ENDPOINT, {
+  	    path: '/ws',
         transports: ["websocket"],
       });
 
