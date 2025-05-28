@@ -95,7 +95,7 @@ export default function Home() {
   const handlePastePublish = async (body) => {
     try {
       const { data } = await client.post(
-        import.meta.env.VITE_API_ENDPOINT + "/clipboard",
+        import.meta.env.VITE_API_ENDPOINT + "/api/clipboard",
         { ...body, client_id: socketRef.current.id }
       );
 
@@ -108,7 +108,7 @@ export default function Home() {
 
   const handlePasteDelete = async (id) => {
     try {
-      await client.delete(`${import.meta.env.VITE_API_ENDPOINT}/clipboard`, {
+      await client.delete(`${import.meta.env.VITE_API_ENDPOINT}/api/clipboard`, {
         params: {
           client_id: socketRef.current.id,
           id,
@@ -223,7 +223,7 @@ export default function Home() {
     try {
       Promise.all([
         await client
-          .get(import.meta.env.VITE_API_ENDPOINT + "/clipboard/all")
+          .get(import.meta.env.VITE_API_ENDPOINT + "/api/clipboard/all")
           .then(({ data }) => {
             if (
               selectedPasteRef.current?.id &&
@@ -242,7 +242,7 @@ export default function Home() {
             setPasteItems(data);
           }),
         await client
-          .get(import.meta.env.VITE_API_ENDPOINT + "/archive/all")
+          .get(import.meta.env.VITE_API_ENDPOINT + "/api/archive/all")
           .then(({ data }) => setArchiveItems(data)),
         ,
       ]);
@@ -259,7 +259,7 @@ export default function Home() {
     payload.append("file", data);
     try {
       const { data } = await client.post(
-        `${import.meta.env.VITE_API_ENDPOINT}/archive`,
+        `${import.meta.env.VITE_API_ENDPOINT}/api/archive`,
         payload,
         { params: { client_id: socketRef.current.id } }
       );
@@ -277,7 +277,7 @@ export default function Home() {
 
     try {
       const { data } = await client.get(
-        `${import.meta.env.VITE_API_ENDPOINT}/archive/download`,
+        `${import.meta.env.VITE_API_ENDPOINT}/api/archive/download`,
         { params: { id }, responseType: "blob" }
       );
 
@@ -298,7 +298,7 @@ export default function Home() {
 
   const handleArchiveDelete = async (id) => {
     try {
-      await client.delete(`${import.meta.env.VITE_API_ENDPOINT}/archive`, {
+      await client.delete(`${import.meta.env.VITE_API_ENDPOINT}/api/archive`, {
         params: { id, client_id: socketRef.current.id },
       });
 
