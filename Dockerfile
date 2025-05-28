@@ -8,7 +8,7 @@ RUN npm install
 
 COPY . .
 
-ENV VITE_API_ENDPOINT=https://api.gabrieleminafra.me
+ENV VITE_API_ENDPOINT=https://paste.gabrieleminafra.me
 
 RUN npm run build
 
