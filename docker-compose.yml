@@ -1,0 +1,9 @@
+services:
+  pastebin_client:
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pastebin_client
+    ports:
+      - "3000:3000"
